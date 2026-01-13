@@ -1,0 +1,24 @@
+20251117 installed streamlit and necessary comps:
+pip install streamlit streamlit-image-coordinates pillow
+
+
+Call it like
+python -m streamlit run *fname.py*
+
+Or call the local host:
+http://localhost:8501
+ 
+ =====================
+
+Structure the logic in packages:
+bb_funcs/ __init__.py
+here I will load
+from .combinations import Whatever
+from .filters import smooth
+
+in the main code, I can re import like
+from bb_funcs import Whatever, smooth
+
+
+
+
