@@ -14,8 +14,6 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import dill 
 from matplotlib.ticker import MaxNLocator
-from numba import jit
-import tensorflow
 dill.settings['recursive']=True
 r, r0, theta, phi, l, m, pi, x, nu, G = sp.symbols('r, r0, θ, φ, l, m, π, x, ν, G')
 
@@ -101,7 +99,7 @@ def create_tables_from_table(table, units='um'):
         initial_radius: supposing conservation of volume
     '''
     coeff_table_real = table
-    coeffs = sh.SHCoeffs.from_array(table)
+    coeffs = sh.SHCoeffs.from_array(table, normalization='ortho', csphase=-1) # wichtig!
     
     lmax = np.shape(coeff_table_real)[1]-1
     # Original volume and d00
@@ -469,6 +467,9 @@ def BeadSolverFromTable(table, order=5, G_exp=1, nu_exp=0.45, N_lats=50, N_lons=
     
     # Extract the table of SH coefficients and some initialization parameters
     lmax, coeff_table_real, coeff_table_complex, initial_radius = create_tables_from_table(table, units='m')
+    print(f'Coeff c00: {coeff_table_real[0,0,0]}')
+    print(f'Coeff c10: {coeff_table_real[0,1,0]}')
+    print(f'Coeff c20: {coeff_table_real[0,2,0]}')
     
     # Load the necessary Master Equation
     EquationPath = f'/media/alejandro/Coding/MyGits/BEADBUDDY/GeneralSolutions/GeneralSolution_lmax={str(order).zfill(2)}.txt'
@@ -482,6 +483,8 @@ def BeadSolverFromTable(table, order=5, G_exp=1, nu_exp=0.45, N_lats=50, N_lons=
     map_deform_norm, map_r_R, map_T_R = Equation2Maps(sympy_expression, coeff_table_complex, initial_radius, N_lats=N_lats, N_lons=N_lons)
     print(f'Solution took {round(time()-start, 4)} seconds')    
     print('='*50+'\n')
+    print(f'Max T: {np.amax(map_T_R)}')
+    print(f'Min T: {np.amin(map_T_R)}')    
     return map_r_R, map_T_R
     
 

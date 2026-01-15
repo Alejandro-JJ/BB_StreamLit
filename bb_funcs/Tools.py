@@ -7,8 +7,6 @@ so that they only execute if params are changed
 import tifffile
 import streamlit as st
 import numpy as np
-import colorcet as cc
-from matplotlib.colors import LinearSegmentedColormap
 from PIL import Image
 import matplotlib.cm as cm
 

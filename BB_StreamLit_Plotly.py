@@ -4,6 +4,7 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 import pyclesperanto_prototype as cle # for GPU selection
 from bb_funcs.Segmentation import Threshold_Im, MasterSegmenter, ExtractSurface, Analysis
 from bb_funcs.Tools import load_3d_tiff, prepare_slices_for_display_and_color, get_pixel_value
+from bb_funcs.Plotter import Plotter_MapOnMap_Plotly, Plotter_FlatShade
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.colors as mcolors
 import colorcet as cc
@@ -183,8 +184,8 @@ with col2:
 
 # RIGHT: placeholder
 with col3:
-    st.subheader("Segmented objects")
-    st.write("3D view will appear here.")
+    st.subheader("Tension map of surface")
+#    st.write("3D view will appear here.")
 
 # Update left canvas
 left_placeholder.image(
@@ -228,49 +229,56 @@ if extract:
                 # Get voxel coordinates
                 #z_idxs, y_idxs, x_idxs = np.where(seg_vol == label)
                 #x, y, z, binary_surface = ExtractSurface(seg_vol, label, Pixel_XY, Pixel_Z, buffer=0)
-                x, y, z, binary_surface = Analysis(seg_vol, label, Pixel_XY, Pixel_Z, ExpDegree=SH_order, buffer=0)
+                x, y, z, binary_surface, map_r_R, map_T_R = Analysis(seg_vol, label, Pixel_XY, Pixel_Z, ExpDegree=SH_order, buffer=5)
                 
-                #############################
                 # Here I load trhe image in disk
                 st.session_state["extracted_image"] = binary_surface
-                ##############################
-                
-                # And scale them with pixel size
-                #z_idxs = z_idxs * Pixel_Z
-                #y_idxs = y_idxs * Pixel_XY
-                #x_idxs = x_idxs * Pixel_XY
+                fig = Plotter_MapOnMap_Plotly(map_r_R, map_T_R, title="")
+#                fig = Plotter_FlatShade(map_r_R, map_T_R, title="Tension map on surface")
+                fig.update_traces(hoverinfo="skip", hovertemplate=None)
+                # No hover enevts
+                fig.update_layout(
+                    hovermode=False,
+                    scene=dict(
+                        xaxis=dict(showspikes=False),
+                        yaxis=dict(showspikes=False),
+                        zaxis=dict(showspikes=False),
+                    )
+                )
+
+
                 
 
                 if z.size == 0:
                     st.error("No voxels found for that label.")
                 else:
-                    pts = np.column_stack((x, y, z))
-
-                    # Subsample if too large
-                    max_points = 5000
-                    if pts.shape[0] > max_points:
-                        step = int(np.ceil(pts.shape[0] / max_points))
-                        pts = pts[::step]
-
-                    # ---- PLOTLY 3D SCATTER ----
-                    fig = go.Figure(data=[
-                        go.Scatter3d(
-                            x=pts[:,0], y=pts[:,1], z=pts[:,2],
-                            mode="markers",
-                            marker=dict(size=2, opacity=0.7)
-                        )
-                    ])
-
-                    fig.update_layout(
-                        width=500, height=500,
-                        scene=dict(
-                            xaxis_title="X",
-                            yaxis_title="Y",
-                            zaxis_title="Z",
-                            aspectmode="data" # to scale
-                        ),
-                        title=f"x_span = {max(x)-min(x)}, y_span = {max(y)-min(y)}, z_span = {max(z)-min(z)}"
-                    )
+#                    pts = np.column_stack((x, y, z))
+#
+#                    # Subsample if too large
+#                    max_points = 5000
+#                    if pts.shape[0] > max_points:
+#                        step = int(np.ceil(pts.shape[0] / max_points))
+#                        pts = pts[::step]
+#
+#                    # ---- PLOTLY 3D SCATTER ----
+#                    fig = go.Figure(data=[
+#                        go.Scatter3d(
+#                            x=pts[:,0], y=pts[:,1], z=pts[:,2],
+#                            mode="markers",
+#                            marker=dict(size=2, opacity=0.7)
+#                        )
+#                    ])
+#
+#                    fig.update_layout(
+#                        width=500, height=500,
+#                        scene=dict(
+#                            xaxis_title="X",
+#                            yaxis_title="Y",
+#                            zaxis_title="Z",
+#                            aspectmode="data" # to scale
+#                        ),
+#                        title=f"x_span = {max(x)-min(x)}, y_span = {max(y)-min(y)}, z_span = {max(z)-min(z)}"
+#                    )
 
                     with col3:
                         st.plotly_chart(fig, use_container_width=True)

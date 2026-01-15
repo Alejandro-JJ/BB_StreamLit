@@ -7,7 +7,7 @@ import numpy as np
 import pyshtools as sh
 import scipy
 from .Tools import sphereFit, Rotate, cart2sph, SH2NP
-
+from .StressTensor_tools import BeadSolverFromTable
 
 
 def Initialize_CLE():
@@ -94,7 +94,7 @@ def MasterSegmenter(im, timepoint=0, backg_r=20, threshold=200, spot_sigma=1, ou
     time.sleep(snooze)
     return im_beads, n
 
-def ExtractSurface(im_beads, pixvalue, pxy, pz, buffer=0):
+def ExtractSurface(im_beads, pixvalue, pxy, pz, buffer=5): # buffer should be set to 0 after debug
     """
     Given a segmented image, extract the surface corresponding
     to the body labelled with pixelvalue.
@@ -120,9 +120,17 @@ def ExtractSurface(im_beads, pixvalue, pxy, pz, buffer=0):
     binary_surface = cle.pull(surface).astype(bool)
     
     # Now we get the coords from the crop
+    # These are still the original coords before rotation
     y = np.where(binary_surface==1)[0] * pz
     z = -np.where(binary_surface==1)[1]  * pxy 
     x = np.where(binary_surface==1)[2] * pxy
+    print(f'Range X: {min(x)} ... {max(x)}')
+    print(f'{x[:5]}')
+    print(f'Range Y: {min(y)} ... {max(y)}')
+    print(f'{y[:5]}')
+    print(f'Range Z: {min(z)} ... {max(z)}')
+    print(f'{z[:5]}')
+    
     # Fit a sphere to the cloud, find center and displace cloud to the origin
     radius,C = sphereFit(x, y, z)
     x, y, z = x - C[0], y - C[1], z - C[2]
@@ -168,7 +176,7 @@ def GetC20(angles, coords, ExpDegree=5):
 
 
 
-def FullC20Optimization(coords, ExpDegree=5):
+def FullC20Optimization(coords, ExpDegree=5, ignore_rot=True):
     """
     This is an improved version of BeadBuddy previous iterations
     (before 2026). In this case, we only pass the coordinates, 
@@ -177,16 +185,26 @@ def FullC20Optimization(coords, ExpDegree=5):
         - find optimal rotation to find orient. with minimum C20 coeff
         - apply rotation and calculate new coords
         - return new coords, coords of the fit, SHTable
+    If ignore_rot==True, the bead will be analyzed as in the original pic
+    If ignore_rot==False, the bead will be rotated to minimize c20 before analysis
     """
     x, y, z = coords
+
+    
+    
     rot_x_guess, rot_y_guess = 0, 0
     guess = np.array([rot_x_guess, rot_y_guess])
     output = scipy.optimize.fmin(GetC20, guess, args=(coords, ExpDegree),disp=False)
-    optimal_rot_x = output[0]
-    optimal_rot_y = output[1]
-    
+
     print('Optimal rotation for minimum C20 projection along Z axis:')
-    print('rot_x= %.2f° ; rot_y= %.2f°' % (optimal_rot_x, optimal_rot_y)) 
+    print('rot_x= %.2f° ; rot_y= %.2f°' % (output[0], output[1])) 
+    if ignore_rot==False:
+        optimal_rot_x = output[0]
+        optimal_rot_y = output[1]
+    else:
+        optimal_rot_x = 0
+        optimal_rot_y = 0
+    print(f'Ignored rotation = {ignore_rot}')
     
     # Once optimal rotation has been found, apply it
     x_new, y_new, z_new = Rotate (x, y, z, optimal_rot_x, optimal_rot_y, 0)
@@ -224,6 +242,9 @@ def Analysis(seg_vol, label, Pixel_XY, Pixel_Z, ExpDegree=3, buffer=0):
     """
     x, y, z, binary_surface = ExtractSurface(seg_vol, label, Pixel_XY, Pixel_Z)
     coords_new, coords_fit, table = FullC20Optimization((x, y, z), ExpDegree=ExpDegree)
-    return *coords_fit, binary_surface
+    map_r_R, map_T_R = BeadSolverFromTable(table, order=ExpDegree, G_exp=1000, nu_exp=0.49, N_lats=50, N_lons=100)
+    print('SOLUTION RAN PROPERLY')
+    
+    return *coords_fit, binary_surface, map_r_R, map_T_R
     
 
