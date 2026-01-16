@@ -1,15 +1,15 @@
 import streamlit as st
 import numpy as np
 from streamlit_image_coordinates import streamlit_image_coordinates
-import pyclesperanto_prototype as cle # for GPU selection
-from bb_funcs.Segmentation import Threshold_Im, MasterSegmenter, ExtractSurface, Analysis
+import pyclesperanto_prototype as cle
+from bb_funcs.Segmentation import MasterSegmenter, Analysis
 from bb_funcs.Tools import load_3d_tiff, prepare_slices_for_display_and_color, get_pixel_value
 from bb_funcs.Plotter import Plotter_MapOnMap_Plotly
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.colors as mcolors
 import colorcet as cc
 import io
-import tifffile # to save fillfiles
+import tifffile
 
 xkcd = mcolors.XKCD_COLORS
 
@@ -100,7 +100,7 @@ SB_colE, SB_colF = st.sidebar.columns(2)
 with SB_colE:
     G = st.number_input("G [kPa]", 0, 10**8, 1000, step=1000)
 with SB_colF:
-    Poisson = st.number_input(r"$\nu$", 0.0, 1.0, 0.5, step=0.1)
+    Poisson = st.number_input(r"$\nu$", 0.0, 1.0, 0.49, step=0.01)
 
 SH_order = st.sidebar.number_input("Spherical Harmonics solution order", 1, 10, 4)
 
@@ -150,35 +150,6 @@ with col2:
     )
 
     extract = st.button("Extract!", disabled=False)
-    
-    # Same structure as extract button for download: always active, complains if not image in buffer
-    # DOWNLOAD BUTTON
-#    image = st.session_state.get("extracted_image", None)
-#    if image is None:
-#        st.download_button(
-#            label="Download extracted TIFF",
-#            data=b"",
-#            file_name="extracted_object.tif",
-#            mime="image/tiff",
-#            disabled=True,
-#            key="download_tiff"
-#        )
-#    else:
-#        buffer = io.BytesIO()
-#        tifffile.imwrite(buffer, image)
-#        buffer.seek(0)
-#    
-#        st.download_button(
-#            label="Download extracted TIFF",
-#            data=buffer,
-#            file_name="extracted_object.tif",
-#            mime="image/tiff",
-#            disabled=False,
-#            key="download_tiff"
-#        )
-
-
-
 
 
 # RIGHT: placeholder
@@ -225,17 +196,14 @@ if extract:
             st.warning("Clicked background (label 0) — nothing to extract.")
         else:
             with st.spinner("Extracting object coordinates and plotting..."):
-                # Get voxel coordinates
-                #z_idxs, y_idxs, x_idxs = np.where(seg_vol == label)
-                #x, y, z, binary_surface = ExtractSurface(seg_vol, label, Pixel_XY, Pixel_Z, buffer=0)
-                x, y, z, binary_surface, map_r_R, map_T_R = Analysis(seg_vol, label, Pixel_XY, Pixel_Z, ExpDegree=SH_order, buffer=5)
-                
-                # Here I load trhe image in disk
+                x, y, z, binary_surface, map_r_R, map_T_R = Analysis(seg_vol, label, Pixel_XY, Pixel_Z, 
+                                                                     ExpDegree=SH_order, G=G, nu=Poisson, buffer=5)
+                # Load image in disk
                 st.session_state["extracted_image"] = binary_surface
                 fig = Plotter_MapOnMap_Plotly(map_r_R, map_T_R, title="")
-#                fig = Plotter_FlatShade(map_r_R, map_T_R, title="Tension map on surface")
+                #fig = Plotter_FlatShade(map_r_R, map_T_R, title="Tension map on surface")
                 fig.update_traces(hoverinfo="skip", hovertemplate=None)
-                # No hover enevts
+                # No hover events
                 fig.update_layout(
                     hovermode=False,
                     scene=dict(
@@ -246,41 +214,12 @@ if extract:
                 )
 
 
-                
-
                 if z.size == 0:
                     st.error("No voxels found for that label.")
                 else:
-#                    pts = np.column_stack((x, y, z))
-#
-#                    # Subsample if too large
-#                    max_points = 5000
-#                    if pts.shape[0] > max_points:
-#                        step = int(np.ceil(pts.shape[0] / max_points))
-#                        pts = pts[::step]
-#
-#                    # ---- PLOTLY 3D SCATTER ----
-#                    fig = go.Figure(data=[
-#                        go.Scatter3d(
-#                            x=pts[:,0], y=pts[:,1], z=pts[:,2],
-#                            mode="markers",
-#                            marker=dict(size=2, opacity=0.7)
-#                        )
-#                    ])
-#
-#                    fig.update_layout(
-#                        width=500, height=500,
-#                        scene=dict(
-#                            xaxis_title="X",
-#                            yaxis_title="Y",
-#                            zaxis_title="Z",
-#                            aspectmode="data" # to scale
-#                        ),
-#                        title=f"x_span = {max(x)-min(x)}, y_span = {max(y)-min(y)}, z_span = {max(z)-min(z)}"
-#                    )
-
                     with col3:
                         st.plotly_chart(fig, use_container_width=True)
+                        
                         
 # DOWNLOAD BUTTON HANDLER (only after extract, so that it gets activated directly, without the necessity to rerun)
 with col2:

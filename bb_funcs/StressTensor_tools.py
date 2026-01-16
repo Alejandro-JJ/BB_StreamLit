@@ -14,6 +14,10 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import dill 
 from matplotlib.ticker import MaxNLocator
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+
 dill.settings['recursive']=True
 r, r0, theta, phi, l, m, pi, x, nu, G = sp.symbols('r, r0, θ, φ, l, m, π, x, ν, G')
 
@@ -444,7 +448,7 @@ def BeadSolver(tablepath, order=5, G_exp=1, nu_exp=0.45, N_lats=50, N_lons=100):
     lmax, coeff_table_real, coeff_table_complex, initial_radius = create_table(tablepath, units='m')
     
     # Load the necessary Master Equation
-    EquationPath = f'/media/alejandro/Coding/MyGits/BEADBUDDY/GeneralSolutions/GeneralSolution_lmax={str(order).zfill(2)}.txt'
+    EquationPath = Path.joinpath(SCRIPT_DIR, f'GeneralSolutions/GeneralSolution_lmax={str(order).zfill(2)}.txt')
 
     MasterEquation = dill.load(open(EquationPath, 'rb'))
     

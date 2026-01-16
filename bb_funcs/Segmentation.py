@@ -230,7 +230,7 @@ def FullC20Optimization(coords, ExpDegree=5, ignore_rot=True):
     return coords_new, coords_fit, table
     
 
-def Analysis(seg_vol, label, Pixel_XY, Pixel_Z, ExpDegree=3, buffer=0):
+def Analysis(seg_vol, label, Pixel_XY, Pixel_Z, ExpDegree=3, G=1000, nu=0.49, buffer=0):
     """
     The final function. Takes labelled picture and
         - Extract surface of desired bead (pixel value)
@@ -242,7 +242,7 @@ def Analysis(seg_vol, label, Pixel_XY, Pixel_Z, ExpDegree=3, buffer=0):
     """
     x, y, z, binary_surface = ExtractSurface(seg_vol, label, Pixel_XY, Pixel_Z)
     coords_new, coords_fit, table = FullC20Optimization((x, y, z), ExpDegree=ExpDegree)
-    map_r_R, map_T_R = BeadSolverFromTable(table, order=ExpDegree, G_exp=1000, nu_exp=0.49, N_lats=50, N_lons=100)
+    map_r_R, map_T_R = BeadSolverFromTable(table, order=ExpDegree, G_exp=G, nu_exp=nu, N_lats=50, N_lons=100)
     print('SOLUTION RAN PROPERLY')
     
     return *coords_fit, binary_surface, map_r_R, map_T_R
