@@ -9,6 +9,9 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+from scipy.spatial.transform import Rotation as R
+
 
 
 
@@ -83,10 +86,6 @@ def get_pixel_value(volume, z, x, y):
 '''
 Colletion of small functions necessary for the SH analysis
 '''
-import numpy as np
-import matplotlib.pyplot as plt
-import pyshtools as sh
-from scipy.spatial.transform import Rotation as R
 
 
 def cart2sph(x, y, z):
@@ -128,7 +127,7 @@ def sphereFit(spX,spY,spZ):
     #   Assemble the f matrix
     f = np.zeros((len(spX),1))
     f[:,0] = (spX*spX) + (spY*spY) + (spZ*spZ)
-    C, residules, rank, singval = np.linalg.lstsq(A,f)
+    C, residules, rank, singval = np.linalg.lstsq(A,f,rcond=None)
 
     #   solve for the radius
     t = (C[0]*C[0])+(C[1]*C[1])+(C[2]*C[2])+C[3]

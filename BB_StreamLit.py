@@ -5,6 +5,7 @@ import pyclesperanto_prototype as cle
 from bb_funcs.Segmentation import MasterSegmenter, Analysis
 from bb_funcs.Tools import load_3d_tiff, prepare_slices_for_display_and_color, get_pixel_value
 from bb_funcs.Plotter import Plotter_MapOnMap_Plotly
+from bb_funcs.InterFacer import InterFacer
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.colors as mcolors
 import colorcet as cc
@@ -20,6 +21,8 @@ st.set_page_config(layout="wide")
 
 # -------------------------------------------------------
 # CSS: slider width only
+# A more complete customization could be achieved with
+# bb_funcs/Interfacer.py
 # -------------------------------------------------------
 st.markdown(
     f"""
@@ -29,8 +32,7 @@ st.markdown(
     }}
     </style>
     """,
-    unsafe_allow_html=True
-)
+    unsafe_allow_html=True)
 
 # -------------------------------------------------------
 # Cached wrapper 
@@ -62,7 +64,7 @@ else:
     volume = np.zeros((depth, height, width), dtype=np.uint16)
     slices_display = np.zeros((depth, CANVAS_DISPLAY_WIDTH, CANVAS_DISPLAY_WIDTH), dtype=np.uint8)
 
-st.write("Streamlit version:", st.__version__)
+#st.write("Streamlit version:", st.__version__)
 
 # -------------------------------------------------------
 # Sidebar: GPU Selection
@@ -82,10 +84,10 @@ else:
 st.sidebar.header("Segmentation Parameters")
 SB_colA, SB_colB = st.sidebar.columns(2)
 with SB_colA:
-    BackGroundNoise = st.number_input("Background noise", 0, 100, 20, step=10)
-    Threshold = st.number_input("Threshold", 0, 10**8, 100, step=10)
+    BackGroundNoise = st.number_input("Background noise", 0, 100, 5, step=10)
+    Threshold = st.number_input("Threshold", 0, 10**8, 50, step=10)
 with SB_colB:
-    SpotSize = st.number_input("Spot size", 0, 100, 1, step=1)
+    SpotSize = st.number_input("Spot size", 0, 100, 2, step=1)
     Outline = st.number_input("Outline", 0, 100, 0, step=1)
 
 st.sidebar.header("Camera parameters")
@@ -98,11 +100,11 @@ with SB_colD:
 st.sidebar.header("Elastic problem")
 SB_colE, SB_colF = st.sidebar.columns(2)
 with SB_colE:
-    G = st.number_input("G [kPa]", 0, 10**8, 1000, step=1000)
+    G = st.number_input("G [kPa]", 0, 10**8, 2100, step=100)
 with SB_colF:
     Poisson = st.number_input(r"$\nu$", 0.0, 1.0, 0.49, step=0.01)
 
-SH_order = st.sidebar.number_input("Spherical Harmonics solution order", 1, 10, 4)
+SH_order = st.sidebar.number_input("Spherical Harmonics solution order", 1, 10, 5)
 
 # -------------------------------------------------------
 # Main Layout
@@ -125,10 +127,11 @@ if run_segment:
             threshold=Threshold,
             spot_sigma=SpotSize,
             outline_sigma=Outline,
-            perc_int=100, snooze=5
+            perc_int=100, snooze=0 # do debug
         )
         st.session_state["segmented_volume"] = segmented_volume
-    st.success(f"Segmentation complete! \nFound {N_beads} beads.")
+    st.success(f"Segmentation complete --- Found {N_beads} beads")
+    st.info("Click on a bead to analyze")
 
 # MIDDLE: segmented
 with col2:
@@ -149,7 +152,7 @@ with col2:
         width=CANVAS_DISPLAY_WIDTH
     )
 
-    extract = st.button("Extract!", disabled=False)
+    extract = st.button("ANALYZE", disabled=False)
 
 
 # RIGHT: placeholder
@@ -212,7 +215,6 @@ if extract:
                         zaxis=dict(showspikes=False),
                     )
                 )
-
 
                 if z.size == 0:
                     st.error("No voxels found for that label.")
