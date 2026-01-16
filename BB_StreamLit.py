@@ -1,17 +1,17 @@
 import streamlit as st
 import numpy as np
-import tifffile
-from PIL import Image
 from streamlit_image_coordinates import streamlit_image_coordinates
 import pyclesperanto_prototype as cle # for GPU selection
-from bb_funcs.Segmentation import Threshold_Im, MasterSegmenter
-import matplotlib.cm as cm
+from bb_funcs.Segmentation import Threshold_Im, MasterSegmenter, ExtractSurface, Analysis
+from bb_funcs.Tools import load_3d_tiff, prepare_slices_for_display_and_color, get_pixel_value
+from bb_funcs.Plotter import Plotter_MapOnMap_Plotly
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.colors as mcolors
 import colorcet as cc
+import io
+import tifffile # to save fillfiles
 
-
-xkcd = mcolors.XKCD_COLORS # for xkcd colors, e.g. xkcd['xkcd:light teal']
+xkcd = mcolors.XKCD_COLORS
 
 CANVAS_DISPLAY_WIDTH = 400
 SLIDER_WIDTH = 400
@@ -33,92 +33,15 @@ st.markdown(
 )
 
 # -------------------------------------------------------
-# Helper functions
+# Cached wrapper 
 # -------------------------------------------------------
-def load_3d_tiff(file):
-    volume = tifffile.imread(file)
-    if volume.ndim != 3:
-        st.error(f"Invalid TIFF shape: {volume.shape}. Must be 3D (Z,Y,X).")
-        return None
-    return volume
-
-def normalize_for_display(slice_2d):
-    """Scale 2D slice to uint8 [0,255] for safe display.
-    The images are not modified for analysis, since
-    we need to take proper pixel values"""
-    slice_min = slice_2d.min()
-    slice_max = slice_2d.max()
-    if slice_max > slice_min:
-        slice_norm = (slice_2d - slice_min) / (slice_max - slice_min)
-    else:
-        slice_norm = slice_2d * 0
-    return (slice_norm * 255).astype(np.uint8)
-
-@st.cache_data
-def prepare_slices_for_display(volume):
-    """
-    Takes whole volume, normalizes to (0,255)
-    and resizes to respect canvas dimensions
-    """
-    slices_display = []
-    for z in range(volume.shape[0]):
-        slice_disp = normalize_for_display(volume[z])
-        img = Image.fromarray(slice_disp)
-        w, h = img.size
-        scale = CANVAS_DISPLAY_WIDTH / w
-        img_resized = img.resize((CANVAS_DISPLAY_WIDTH, int(h*scale)))
-        slices_display.append(np.array(img_resized))
-    return np.array(slices_display)
-
-def get_pixel_value(volume, z, x, y):
-    if 0 <= z < volume.shape[0] and 0 <= y < volume.shape[1] and 0 <= x < volume.shape[2]:
-        return volume[z, y, x]
-    return None
-
-# Custom glasbey colormap
 mycmap = cc.glasbey_bw_minc_20_minl_30
-mycmap[0]=[0,0,0] # black as first value
+mycmap[0] = [0,0,0]
 cmap_glasbey = LinearSegmentedColormap.from_list('cmap_glasbey', mycmap)
 
-
-def prepare_slices_for_display_and_color(volume, colormap='cmap_glasbey'):
-    """
-    Takes whole volume, normalizes to (0,255)
-    and resizes to respect canvas dimensions.
-    If colormap is provided, it is applied to normalized slices.
-    
-    colormap: None or name of a matplotlib colormap (e.g. "magma", "viridis")
-    """
-    slices_display = []
-
-    for z in range(volume.shape[0]):
-        slice_2d = volume[z]
-
-        # ----- Normalize to 0–255 -----
-        slice_min = slice_2d.min()
-        slice_max = slice_2d.max()
-        if slice_max > slice_min:
-            norm = (slice_2d - slice_min) / (slice_max - slice_min)
-        else:
-            norm = np.zeros_like(slice_2d, dtype=float)
-
-        # ----- Apply colormap or grayscale -----
-        if colormap is not None:
-            cmap = cm.get_cmap(colormap)
-            colored = cmap(norm)[:, :, :3]               # ignore alpha
-            slice_disp = (colored * 255).astype(np.uint8)
-        else:
-            slice_disp = (norm * 255).astype(np.uint8)
-
-        # ----- Resize -----
-        img = Image.fromarray(slice_disp)
-        w, h = img.size
-        scale = CANVAS_DISPLAY_WIDTH / w
-        img_resized = img.resize((CANVAS_DISPLAY_WIDTH, int(h * scale)))
-
-        slices_display.append(np.array(img_resized))
-
-    return np.array(slices_display)
+@st.cache_data
+def prepare_slices_for_display_and_color_cached(volume, canvas_display_width, _colormap):
+    return prepare_slices_for_display_and_color(volume, canvas_display_width, _colormap)
 
 # -------------------------------------------------------
 # Sidebar: Upload 3D TIFF
@@ -131,13 +54,16 @@ if uploaded is not None:
     if volume is None:
         st.stop()
     depth, height, width = volume.shape
-    slices_display = prepare_slices_for_display(volume)
+    slices_display = prepare_slices_for_display_and_color_cached(
+        volume, canvas_display_width=CANVAS_DISPLAY_WIDTH, _colormap='gray'
+    )
 else:
     depth, height, width = 20, 256, 256
     volume = np.zeros((depth, height, width), dtype=np.uint16)
     slices_display = np.zeros((depth, CANVAS_DISPLAY_WIDTH, CANVAS_DISPLAY_WIDTH), dtype=np.uint8)
 
 st.write("Streamlit version:", st.__version__)
+
 # -------------------------------------------------------
 # Sidebar: GPU Selection
 # -------------------------------------------------------
@@ -152,13 +78,12 @@ else:
 
 # -------------------------------------------------------
 # Sidebar: Parameters
-# ADD HELP FEATURE!!    
 # -------------------------------------------------------
 st.sidebar.header("Segmentation Parameters")
 SB_colA, SB_colB = st.sidebar.columns(2)
 with SB_colA:
     BackGroundNoise = st.number_input("Background noise", 0, 100, 20, step=10)
-    Threshold = st.number_input("Threshold", 0, 10**8, 1000, step=10)
+    Threshold = st.number_input("Threshold", 0, 10**8, 100, step=10)
 with SB_colB:
     SpotSize = st.number_input("Spot size", 0, 100, 1, step=1)
     Outline = st.number_input("Outline", 0, 100, 0, step=1)
@@ -187,21 +112,21 @@ col1, col2, col3 = st.columns([1,1,1])
 # LEFT: original
 with col1:
     st.subheader("Fluorescence image")
-    left_placeholder = st.empty() # will be filled later with im
+    left_placeholder = st.empty()
     z_index = st.slider("Z-slice", 0, depth-1, 0, key="left_slider")
-    run_segment = st.button("SEGMENT", disabled=(uploaded is None)) # not active until image
+    run_segment = st.button("SEGMENT", disabled=(uploaded is None))
 
 # PROCESS SEGMENTATION
 if run_segment:
-    # Add a spinner status bar
-    with st.spinner("Running segmentation..."): # argument show_time=True  will be included in future release
-        #segmented_volume = Threshold_Im(volume, Threshold, snooze=3) # change snooze
-        segmented_volume, N_beads = MasterSegmenter(volume, timepoint=0, 
-                                                    backg_r=20, 
-                                                    threshold=100, 
-                                                    spot_sigma=1, 
-                                                    outline_sigma=1, 
-                                                    perc_int=100, snooze=0)
+    with st.spinner("Running segmentation..."):
+        segmented_volume, N_beads = MasterSegmenter(
+            volume, timepoint=0,
+            backg_r=BackGroundNoise,
+            threshold=Threshold,
+            spot_sigma=SpotSize,
+            outline_sigma=Outline,
+            perc_int=100, snooze=5
+        )
         st.session_state["segmented_volume"] = segmented_volume
     st.success(f"Segmentation complete! \nFound {N_beads} beads.")
 
@@ -209,9 +134,11 @@ if run_segment:
 with col2:
     st.subheader("Segmented image")
     if "segmented_volume" in st.session_state:
-        #segmented_display = prepare_slices_for_display(st.session_state["segmented_volume"])
-        segmented_display = prepare_slices_for_display_and_color(st.session_state["segmented_volume"], 
-                                                                 colormap=cmap_glasbey)
+        segmented_display = prepare_slices_for_display_and_color_cached(
+            st.session_state["segmented_volume"],
+            canvas_display_width=CANVAS_DISPLAY_WIDTH,
+            _colormap=cmap_glasbey
+        )
         display_image = segmented_display[z_index]
     else:
         display_image = np.zeros((CANVAS_DISPLAY_WIDTH, CANVAS_DISPLAY_WIDTH), dtype=np.uint8)
@@ -222,10 +149,42 @@ with col2:
         width=CANVAS_DISPLAY_WIDTH
     )
 
+    extract = st.button("Extract!", disabled=False)
+    
+    # Same structure as extract button for download: always active, complains if not image in buffer
+    # DOWNLOAD BUTTON
+#    image = st.session_state.get("extracted_image", None)
+#    if image is None:
+#        st.download_button(
+#            label="Download extracted TIFF",
+#            data=b"",
+#            file_name="extracted_object.tif",
+#            mime="image/tiff",
+#            disabled=True,
+#            key="download_tiff"
+#        )
+#    else:
+#        buffer = io.BytesIO()
+#        tifffile.imwrite(buffer, image)
+#        buffer.seek(0)
+#    
+#        st.download_button(
+#            label="Download extracted TIFF",
+#            data=buffer,
+#            file_name="extracted_object.tif",
+#            mime="image/tiff",
+#            disabled=False,
+#            key="download_tiff"
+#        )
+
+
+
+
+
 # RIGHT: placeholder
 with col3:
-    st.subheader("Segmented objects")
-    st.write("3D view will appear here.")
+    st.subheader("Tension map of surface")
+#    st.write("3D view will appear here.")
 
 # Update left canvas
 left_placeholder.image(
@@ -243,4 +202,109 @@ if coords is not None:
         st.session_state.get("segmented_volume", volume),
         z_index, x_orig, y_orig
     )
-    st.write(f"Clicked pixel: x={x_orig}, y={y_orig}, z={z_index} value={value}")
+    st.write(f"Clicked bead with pixel value: {value}")
+
+    st.session_state["last_click"] = {
+        "x": x_orig, "y": y_orig, "z": z_index,
+        "value": int(value) if value is not None else None
+    }
+    
+
+# -------------------------------------------------------
+# EXTRACT BUTTON HANDLER — WITH PLOTLY 3D SCATTER
+# -------------------------------------------------------
+if extract:
+    last = st.session_state.get("last_click", None)
+    if last is None:
+        st.warning("Click on an object first.")
+    else:
+        label = last["value"]
+        seg_vol = st.session_state["segmented_volume"]
+
+        if label == 0 or label is None:
+            st.warning("Clicked background (label 0) — nothing to extract.")
+        else:
+            with st.spinner("Extracting object coordinates and plotting..."):
+                # Get voxel coordinates
+                #z_idxs, y_idxs, x_idxs = np.where(seg_vol == label)
+                #x, y, z, binary_surface = ExtractSurface(seg_vol, label, Pixel_XY, Pixel_Z, buffer=0)
+                x, y, z, binary_surface, map_r_R, map_T_R = Analysis(seg_vol, label, Pixel_XY, Pixel_Z, ExpDegree=SH_order, buffer=5)
+                
+                # Here I load trhe image in disk
+                st.session_state["extracted_image"] = binary_surface
+                fig = Plotter_MapOnMap_Plotly(map_r_R, map_T_R, title="")
+#                fig = Plotter_FlatShade(map_r_R, map_T_R, title="Tension map on surface")
+                fig.update_traces(hoverinfo="skip", hovertemplate=None)
+                # No hover enevts
+                fig.update_layout(
+                    hovermode=False,
+                    scene=dict(
+                        xaxis=dict(showspikes=False),
+                        yaxis=dict(showspikes=False),
+                        zaxis=dict(showspikes=False),
+                    )
+                )
+
+
+                
+
+                if z.size == 0:
+                    st.error("No voxels found for that label.")
+                else:
+#                    pts = np.column_stack((x, y, z))
+#
+#                    # Subsample if too large
+#                    max_points = 5000
+#                    if pts.shape[0] > max_points:
+#                        step = int(np.ceil(pts.shape[0] / max_points))
+#                        pts = pts[::step]
+#
+#                    # ---- PLOTLY 3D SCATTER ----
+#                    fig = go.Figure(data=[
+#                        go.Scatter3d(
+#                            x=pts[:,0], y=pts[:,1], z=pts[:,2],
+#                            mode="markers",
+#                            marker=dict(size=2, opacity=0.7)
+#                        )
+#                    ])
+#
+#                    fig.update_layout(
+#                        width=500, height=500,
+#                        scene=dict(
+#                            xaxis_title="X",
+#                            yaxis_title="Y",
+#                            zaxis_title="Z",
+#                            aspectmode="data" # to scale
+#                        ),
+#                        title=f"x_span = {max(x)-min(x)}, y_span = {max(y)-min(y)}, z_span = {max(z)-min(z)}"
+#                    )
+
+                    with col3:
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+# DOWNLOAD BUTTON HANDLER (only after extract, so that it gets activated directly, without the necessity to rerun)
+with col2:
+    image = st.session_state.get("extracted_image", None)
+    if image is None:
+        st.download_button(
+            label="Download extracted TIFF",
+            data=b"",
+            file_name="extracted_object.tif",
+            mime="image/tiff",
+            disabled=True,
+            key="download_tiff"
+        )
+    else:
+        buffer = io.BytesIO()
+        tifffile.imwrite(buffer, image)
+        buffer.seek(0)
+
+        st.download_button(
+            label="Download extracted TIFF",
+            data=buffer,
+            file_name="extracted_object.tif",
+            mime="image/tiff",
+            disabled=False,
+            key="download_tiff"
+        )
+
